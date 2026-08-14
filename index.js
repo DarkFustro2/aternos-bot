@@ -21,8 +21,8 @@ setInterval(() => {
 }, 8 * 60 * 1000); // 8 dakikada bir otomatik tık atar
 
 // ATERNOS BİLGİLERİN
-const SUNUCU_IP = 'senin-sunucun.aternos.me'; // Kendi Aternos IP'ni yaz!
-const SUNUCU_PORT = 25565;
+const SUNUCU_IP = 'goodbridgesmp.aternos.me'; // Kendi Aternos IP'ni yaz!
+const SUNUCU_PORT = 30769;
 
 function botuBaslat() {
     console.log("Aternos sunucusuna bağlanılıyor...");
