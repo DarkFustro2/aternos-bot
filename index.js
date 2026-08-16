@@ -1,260 +1,84 @@
-const express = require('express');
 const mineflayer = require('mineflayer');
+const express = require('express');
+const http = require('http');
 
+// --- 1. RENDER İÇİN WEB SUNUCUSU VE SELF-PING ---
 const app = express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+const PORT = process.env.PORT || 3000;
 
-let bot = null;
+app.get('/', (req, res) => {
+  res.send('Bot servisi aktif ve uyanik!');
+});
 
-let botDurumu = {
-    durum: "Çevrimdışı",
-    renk: "#ef4444",
-    ip: "IP adresi",
-    port: "25565",
-    kullaniciAdi: "Bot Name",
-    loglar: []
+app.listen(PORT, () => {
+  console.log(`[Web] Sunucu ${PORT} portunda baslatildi.`);
+});
+
+// Render'in web servisini uyutmamasi icın 2 dakikada bir istek atan sistem
+setInterval(() => {
+  http.get(`http://localhost:${PORT}`, (res) => {
+    console.log('[Self-Ping] Ping gönderildi, Render uyanik tutuluyor.');
+  }).on('error', (err) => {
+    console.log('[Self-Ping] Hata:', err.message);
+  });
+}, 2 * 60 * 1000); // 2 dakika
+
+// --- 2. MINECRAFT BOT AYARLARI ---
+const botOptions = {
+  host: 'goodbridgesmp.aternos.me',
+  port: 30769,
+  username: 'GoodBridgeSMP',
+  // Sürüm sorunu yasiyorsan 'false' yerine sunucu sürümünü string yazabilirsin (ör. version: '1.21.1')
+  version: false 
 };
 
-function logEkle(mesaj) {
-    const zaman = new Date().toLocaleTimeString();
-    const yeniLog = `[${zaman}] ${mesaj}`;
-    botDurumu.loglar.unshift(yeniLog);
-    if (botDurumu.loglar.length > 30) botDurumu.loglar.pop();
-    console.log(yeniLog);
+function createBot() {
+  console.log('[Bot] Sunucuya baglaniliyor...');
+  const bot = mineflayer.createBot(botOptions);
+
+  let afkInterval;
+
+  bot.on('spawn', () => {
+    console.log('[Bot] Sunucuya basariyla giris yapildi!');
+
+    // Anti-AFK Döngüsü (Her 30 saniyede bir hareket eder ve /help yazar)
+    afkInterval = setInterval(() => {
+      if (!bot || !bot.entity) return;
+
+      // 1. Komut Gönder
+      bot.chat('/help');
+
+      // 2. Hafif Ziplama Hareketi
+      bot.setControlState('jump', true);
+      setTimeout(() => {
+        if (bot) bot.setControlState('jump', false);
+      }, 500);
+
+      // 3. Rastgele Etrafa Bakma
+      const yaw = Math.random() * Math.PI * 2;
+      const pitch = (Math.random() - 0.5) * Math.PI;
+      bot.look(yaw, pitch, true);
+
+      console.log('[Anti-AFK] Hareket edildi ve /help yazildi.');
+    }, 30 * 1000); // 30 saniye
+  });
+
+  // Sunucudan dusme / atilma durumunda temizlik ve yeniden baglanma
+  bot.on('end', (reason) => {
+    console.log(`[Bot] Baglanti kesildi. Sebep: ${reason}`);
+    clearInterval(afkInterval);
+    console.log('[Bot] 15 saniye sonra tekrar baglanilacak...');
+    setTimeout(createBot, 15000);
+  });
+
+  bot.on('kicked', (reason) => {
+    console.log('[Bot] Sunucudan atildi. Sebep:', reason);
+  });
+
+  bot.on('error', (err) => {
+    console.log('[Bot] Hata olustu:', err.message);
+  });
 }
 
-function botuOlustur() {
-    if (bot) return;
-
-    botDurumu.durum = "Bağlanıyor...";
-    botDurumu.renk = "#eab308";
-    logEkle(`🔌 ${botDurumu.ip}:${botDurumu.port} adresine ${botDurumu.kullaniciAdi} ismiyle bağlanılıyor...`);
-
-    try {
-        const portNumber = parseInt(botDurumu.port) || 25565;
-
-        bot = mineflayer.createBot({
-            host: botDurumu.ip,
-            port: portNumber,
-            username: botDurumu.kullaniciAdi,
-            version: "1.21.11",
-            fakeHost: botDurumu.ip,
-            skipValidation: true,
-            hideErrors: true,
-            checkTimeoutInterval: 90000
-        });
-
-        bot.on('spawn', () => {
-            botDurumu.durum = "🟢 Oyunda (Nöbet Aktif)";
-            botDurumu.renk = "#22c55e";
-            logEkle("✅ Bot BAŞARIYLA sunucuya girdi!");
-
-            // Her 30 saniyede bir zıplama ve rastgele bakış (AFK Kalmama)
-            if (!global.jumpInterval) {
-                global.jumpInterval = setInterval(() => {
-                    if (bot && bot.entity) {
-                        bot.setControlState('jump', true);
-                        setTimeout(() => bot.setControlState('jump', false), 400);
-                        const yaw = Math.random() * Math.PI * 2;
-                        const pitch = (Math.random() - 0.5) * Math.PI / 2;
-                        bot.look(yaw, pitch, false);
-                    }
-                }, 30000);
-            }
-
-            // Her 2 dakikada bir komut gönderme (AFK Kick Engelleme)
-            if (!global.chatInterval) {
-                global.chatInterval = setInterval(() => {
-                    if (bot && bot.player) {
-                        bot.chat("/help");
-                    }
-                }, 120000);
-            }
-        });
-
-        bot.on('kicked', (reason) => {
-            logEkle(`⚠️ Sunucudan atıldı: ${typeof reason === 'object' ? JSON.stringify(reason) : reason}`);
-            botuTemizle("🔴 Sunucudan Atıldı", "#ef4444");
-        });
-
-        bot.on('end', () => {
-            logEkle("⚠️ Bağlantı koptu.");
-            botuTemizle("🔴 Bağlantı Koptu", "#ef4444");
-        });
-
-        bot.on('error', (err) => {
-            logEkle(`❌ Bağlantı hatası: ${err.message}`);
-            botuTemizle("❌ Hata Oluştu", "#ef4444");
-        });
-
-    } catch (err) {
-        logEkle(`❌ Hata: ${err.message}`);
-        botuTemizle("❌ Hata Oluştu", "#ef4444");
-    }
-}
-
-function botuTemizle(durumMetni, renk) {
-    if (bot) {
-        try {
-            bot.removeAllListeners();
-        } catch (e) {}
-        bot = null;
-    }
-    if (global.jumpInterval) clearInterval(global.jumpInterval);
-    if (global.chatInterval) clearInterval(global.chatInterval);
-    global.jumpInterval = null;
-    global.chatInterval = null;
-
-    botDurumu.durum = durumMetni;
-    botDurumu.renk = renk;
-}
-
-// WEB ARAYÜZÜ
-app.get('/', (req, res) => {
-    res.send(`
-    <!DOCTYPE html>
-    <html lang="tr">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Bot Creator</title>
-        <style>
-            * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-            body { background-color: #0f172a; color: #f8fafc; margin: 0; padding: 20px; display: flex; justify-content: center; }
-            .container { width: 100%; max-width: 650px; background: #1e293b; border-radius: 12px; padding: 25px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid #334155; }
-            h1 { text-align: center; color: #38bdf8; margin-top: 0; font-size: 24px; }
-            .status-card { display: flex; align-items: center; justify-content: space-between; background: #0f172a; padding: 15px 20px; border-radius: 8px; border-left: 5px solid #ef4444; margin-bottom: 20px; }
-            .status-badge { font-weight: bold; padding: 6px 12px; border-radius: 20px; font-size: 14px; background: rgba(255,255,255,0.1); }
-            .form-group { margin-bottom: 15px; }
-            label { display: block; margin-bottom: 5px; color: #94a3b8; font-size: 14px; }
-            input { width: 100%; padding: 10px 14px; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: #fff; font-size: 15px; outline: none; }
-            input:focus { border-color: #38bdf8; }
-            .btn-group { display: flex; gap: 10px; margin-top: 20px; }
-            button { flex: 1; padding: 12px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 15px; transition: 0.2s; }
-            .btn-start { background: #22c55e; color: #fff; }
-            .btn-start:hover { background: #16a34a; }
-            .btn-stop { background: #ef4444; color: #fff; }
-            .btn-stop:hover { background: #dc2626; }
-            .logs-box { background: #090d16; border: 1px solid #334155; border-radius: 6px; height: 200px; overflow-y: auto; padding: 10px; font-family: monospace; font-size: 13px; margin-top: 20px; color: #cbd5e1; }
-            .log-line { margin-bottom: 4px; }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>⚡ Bot Creator</h1>
-            
-            <div class="status-card" id="statusCard">
-                <span>Durum: <strong id="statusText">Çevrimdışı</strong></span>
-                <span class="status-badge" id="statusBadge">🔴 Kapalı</span>
-            </div>
-
-            <form id="botForm">
-                <div class="form-group">
-                    <label>Sunucu IP Adresi</label>
-                    <input type="text" id="ip" value="${botDurumu.ip}" required>
-                </div>
-                <div class="form-group">
-                    <label>Port</label>
-                    <input type="text" id="port" value="${botDurumu.port}" required>
-                </div>
-                <div class="form-group">
-                    <label>Bot Adı (Username)</label>
-                    <input type="text" id="username" value="${botDurumu.kullaniciAdi}" required>
-                </div>
-                
-                <div class="btn-group">
-                    <button type="button" class="btn-start" onclick="botuBaslat()">🚀 Botu Sok</button>
-                    <button type="button" class="btn-stop" onclick="botuDurdur()">🛑 Botu Geri Çek</button>
-                </div>
-            </form>
-
-            <h3 style="margin-top: 25px; margin-bottom: 10px; font-size: 16px; color: #94a3b8;">📋 Canlı Konsol Logları</h3>
-            <div class="logs-box" id="logsBox">
-                <div>Yükleniyor...</div>
-            </div>
-        </div>
-
-        <script>
-            async function verileriGuncelle() {
-                try {
-                    const res = await fetch('/api/status');
-                    const data = await res.json();
-                    
-                    document.getElementById('statusText').innerText = data.durum;
-                    const badge = document.getElementById('statusBadge');
-                    const card = document.getElementById('statusCard');
-                    
-                    badge.innerText = data.durum;
-                    card.style.borderLeftColor = data.renk;
-
-                    const logsBox = document.getElementById('logsBox');
-                    logsBox.innerHTML = data.loglar.map(l => \`<div class="log-line">\${l}</div>\`).join('');
-                } catch(e) {}
-            }
-
-            async function botuBaslat() {
-                const ip = document.getElementById('ip').value;
-                const port = document.getElementById('port').value;
-                const username = document.getElementById('username').value;
-
-                await fetch('/api/start', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ip, port, username })
-                });
-                verileriGuncelle();
-            }
-
-            async function botuDurdur() {
-                await fetch('/api/stop', { method: 'POST' });
-                verileriGuncelle();
-            }
-
-            setInterval(verileriGuncelle, 3000);
-            verileriGuncelle();
-        </script>
-    </body>
-    </html>
-    `);
-});
-
-app.get('/api/status', (req, res) => {
-    res.json(botDurumu);
-});
-
-app.post('/api/start', (req, res) => {
-    const { ip, port, username } = req.body;
-
-    if (bot) {
-        logEkle("⚠️ Bot zaten çalışıyor! Önce durdurun.");
-        return res.json({ success: false });
-    }
-
-    botDurumu.ip = ip;
-    botDurumu.port = port;
-    botDurumu.kullaniciAdi = username;
-
-    botuOlustur();
-    res.json({ success: true });
-});
-
-app.post('/api/stop', (req, res) => {
-    if (bot) {
-        logEkle("🛑 Kullanıcı emriyle bot oyundan çekiliyor...");
-        try {
-            bot.quit();
-        } catch(e) {}
-        botuTemizle("🔴 Çevrimdışı (Durduruldu)", "#ef4444");
-        res.json({ success: true });
-    } else {
-        logEkle("⚠️ Çalışan aktif bir bot bulunamadı.");
-        botuTemizle("🔴 Çevrimdışı", "#ef4444");
-        res.json({ success: false });
-    }
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    logEkle(`🌐 Kontrol paneli yayında! Port: ${PORT}`);
-});
+// Botu baslat
+createBot();
