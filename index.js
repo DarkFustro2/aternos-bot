@@ -28,15 +28,17 @@ const botOptions = {
   host: 'goodbridgesmp.aternos.me',
   port: 30769,
   username: 'GoodBridgeSMP',
-  // Sürüm sorunu yasiyorsan 'false' yerine sunucu sürümünü string yazabilirsin (ör. version: '1.21.1')
-  version: false 
+  version: false // Sunucu sürümünü otomatik algilar
 };
+
+let isReconnecting = false;
 
 function createBot() {
   console.log('[Bot] Sunucuya baglaniliyor...');
+  isReconnecting = false;
+  
   const bot = mineflayer.createBot(botOptions);
-
-  let afkInterval;
+  let afkInterval = null;
 
   bot.on('spawn', () => {
     console.log('[Bot] Sunucuya basariyla giris yapildi!');
@@ -63,22 +65,43 @@ function createBot() {
     }, 30 * 1000); // 30 saniye
   });
 
-  // Sunucudan dusme / atilma durumunda temizlik ve yeniden baglanma
-  bot.on('end', (reason) => {
-    console.log(`[Bot] Baglanti kesildi. Sebep: ${reason}`);
-    clearInterval(afkInterval);
-    console.log('[Bot] 15 saniye sonra tekrar baglanilacak...');
-    setTimeout(createBot, 15000);
+  // Sunucudan atilma durumu
+  bot.on('kicked', (reason) => {
+    const reasonStr = JSON.stringify(reason);
+    console.log('[Bot] Sunucudan atildi. Sebep:', reasonStr);
+
+    // Eger duplicate_login hatasi alindiysa oturumun dusmesi icin daha uzun bekle (45sn)
+    if (reasonStr.includes('duplicate_login')) {
+      console.log('[Bot] Ayni isimle giris tespit edildi. Oturumun dusmesi icin 45 saniye bekleniyor...');
+      reconnect(45000);
+    }
   });
 
-  bot.on('kicked', (reason) => {
-    console.log('[Bot] Sunucudan atildi. Sebep:', reason);
+  // Baglanti kesilmesi
+  bot.on('end', (reason) => {
+    console.log(`[Bot] Baglanti kesildi. Sebep: ${reason}`);
+    if (afkInterval) clearInterval(afkInterval);
+    
+    // Eger kicked eventinde ozel reconnect tetiklenmediyse standart reconnect (30sn)
+    reconnect(30000);
   });
 
   bot.on('error', (err) => {
     console.log('[Bot] Hata olustu:', err.message);
   });
+
+  function reconnect(delay) {
+    if (isReconnecting) return;
+    isReconnecting = true;
+
+    if (afkInterval) clearInterval(afkInterval);
+    console.log(`[Bot] ${delay / 1000} saniye sonra tekrar baglanilacak...`);
+    
+    setTimeout(() => {
+      createBot();
+    }, delay);
+  }
 }
 
-// Botu baslat
+// Botu ilk kez baslat
 createBot();
