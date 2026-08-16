@@ -6,8 +6,6 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 let bot = null;
-let otoBaglan = false; // Otomatik yeniden bağlanma anahtarı
-let baglantiZamanlayici = null;
 
 let botDurumu = {
     durum: "Çevrimdışı",
@@ -41,9 +39,9 @@ function botuOlustur() {
             port: portNumber,
             username: botDurumu.kullaniciAdi,
             version: "1.21.11",
-            fakeHost: botDurumu.ip,      // Aternos el sıkışmasını taklit eder
-            skipValidation: true,        // Hızlı bağlantı kurmayı sağlar
-            hideErrors: true,            // Gereksiz bağlantı gürültülerini engeller
+            fakeHost: botDurumu.ip,
+            skipValidation: true,
+            hideErrors: true,
             checkTimeoutInterval: 90000
         });
 
@@ -52,7 +50,7 @@ function botuOlustur() {
             botDurumu.renk = "#22c55e";
             logEkle("✅ Bot BAŞARIYLA sunucuya girdi!");
 
-            // Her 30 saniyede bir zıplama ve rastgele bakış
+            // Her 30 saniyede bir zıplama ve rastgele bakış (AFK Kalmama)
             if (!global.jumpInterval) {
                 global.jumpInterval = setInterval(() => {
                     if (bot && bot.entity) {
@@ -65,7 +63,7 @@ function botuOlustur() {
                 }, 30000);
             }
 
-            // Her 2 dakikada bir sohbet hareketi (AFK düşmesini engeller)
+            // Her 2 dakikada bir komut gönderme (AFK Kick Engelleme)
             if (!global.chatInterval) {
                 global.chatInterval = setInterval(() => {
                     if (bot && bot.player) {
@@ -77,39 +75,23 @@ function botuOlustur() {
 
         bot.on('kicked', (reason) => {
             logEkle(`⚠️ Sunucudan atıldı: ${typeof reason === 'object' ? JSON.stringify(reason) : reason}`);
-            botuTemizle("🔴 Atıldı (Tekrar Deneniyor...)", "#ef4444");
-            otomatikYenidenBaglan();
+            botuTemizle("🔴 Sunucudan Atıldı", "#ef4444");
         });
 
         bot.on('end', () => {
             logEkle("⚠️ Bağlantı koptu.");
-            botuTemizle("🔴 Kopma Oldu (Tekrar Deneniyor...)", "#ef4444");
-            otomatikYenidenBaglan();
+            botuTemizle("🔴 Bağlantı Koptu", "#ef4444");
         });
 
         bot.on('error', (err) => {
             logEkle(`❌ Bağlantı hatası: ${err.message}`);
-            botuTemizle("❌ Hata (Tekrar Deneniyor...)", "#ef4444");
-            otomatikYenidenBaglan();
+            botuTemizle("❌ Hata Oluştu", "#ef4444");
         });
 
     } catch (err) {
         logEkle(`❌ Hata: ${err.message}`);
         botuTemizle("❌ Hata Oluştu", "#ef4444");
-        otomatikYenidenBaglan();
     }
-}
-
-function otomatikYenidenBaglan() {
-    if (!otoBaglan) return;
-    if (baglantiZamanlayici) clearTimeout(baglantiZamanlayici);
-
-    logEkle("🔄 15 saniye sonra otomatik tekrar bağlanılacak...");
-    baglantiZamanlayici = setTimeout(() => {
-        if (otoBaglan && !bot) {
-            botuOlustur();
-        }
-    }, 15000);
 }
 
 function botuTemizle(durumMetni, renk) {
@@ -182,7 +164,7 @@ app.get('/', (req, res) => {
                 </div>
                 
                 <div class="btn-group">
-                    <button type="button" class="btn-start" onclick="botuBaslat()">🚀 Botu Sok (Oto-Yeniden Bağlan Açık)</button>
+                    <button type="button" class="btn-start" onclick="botuBaslat()">🚀 Botu Sok</button>
                     <button type="button" class="btn-stop" onclick="botuDurdur()">🛑 Botu Geri Çek</button>
                 </div>
             </form>
@@ -249,7 +231,6 @@ app.post('/api/start', (req, res) => {
         return res.json({ success: false });
     }
 
-    otoBaglan = true;
     botDurumu.ip = ip;
     botDurumu.port = port;
     botDurumu.kullaniciAdi = username;
@@ -259,9 +240,6 @@ app.post('/api/start', (req, res) => {
 });
 
 app.post('/api/stop', (req, res) => {
-    otoBaglan = false;
-    if (baglantiZamanlayici) clearTimeout(baglantiZamanlayici);
-
     if (bot) {
         logEkle("🛑 Kullanıcı emriyle bot oyundan çekiliyor...");
         try {
