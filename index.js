@@ -9,9 +9,9 @@ let bot = null;
 let botDurumu = {
     durum: "Çevrimdışı",
     renk: "red",
-    ip: "goodbridgesmp.aternos.me",
-    port: 30769,
-    kullaniciAdi: "GoodBridgeSMP",
+    ip: "ip adress",
+    port: "port",
+    kullaniciAdi: "bot name",
     loglar: []
 };
 
@@ -161,7 +161,7 @@ app.post('/api/start', (req, res) => {
             host: botDurumu.ip,
             port: botDurumu.port,
             username: botDurumu.kullaniciAdi,
-            version: "1.21.1",
+            version: "1.21.11",
             checkTimeoutInterval: 90000
         });
 
