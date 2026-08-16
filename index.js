@@ -8,7 +8,7 @@ http.createServer((req, res) => {
 }).listen(process.env.PORT || 3000);
 
 // ATERNOS BİLGİLERİN
-const SUNUCU_IP = 'goodbridgesmp.aternos.me'; // Kendi Aternos IP'ni yaz!
+const SUNUCU_IP = 'goodbridgesmp.aternos.me';
 const SUNUCU_PORT = 30769;
 
 let bot = null;
@@ -20,20 +20,20 @@ function botuBaslat() {
         bot = null;
     }
 
-    console.log("Aternos sunucusuna bağlanılıyor...");
+    console.log(`[${new Date().toLocaleTimeString()}] ${SUNUCU_IP}:${SUNUCU_PORT} sunucusuna bağlanılıyor...`);
 
     bot = mineflayer.createBot({
         host: SUNUCU_IP,
         port: SUNUCU_PORT,
         username: 'GoodBridgeSMP',
-        checkTimeoutInterval: 60000,
-        hideErrors: true // Gereksiz log birikintisini ve RAM dolmasını engeller
+        version: "1.21.11", // Tam istediğin sürüm!
+        checkTimeoutInterval: 90000
     });
 
     bot.on('spawn', () => {
-        console.log("✅ Bot sunucuda! Nöbet başladı.");
+        console.log("✅ Bot BAŞARIYLA oyuna girdi! Nöbet başladı.");
         
-        // 45 saniyede bir hafif hareket
+        // 45 saniyede bir hafif zıplama ve etrafa bakış
         setInterval(() => {
             if (bot && bot.entity) {
                 bot.setControlState('jump', true);
@@ -44,16 +44,16 @@ function botuBaslat() {
             }
         }, 45000);
 
-        // 3 dakikada bir chat mesajı
+        // 3 dakikada bir otomatik /help komutu yazarak AFK kalmayı engeller
         setInterval(() => {
             if (bot && bot.player) {
-                bot.chat("/msg GoodBridgeSMP BOT");
+                bot.chat("/help");
             }
         }, 180000);
     });
 
     bot.on('kicked', (reason) => {
-        console.log("⚠️ Sunucudan atıldı.");
+        console.log("⚠️ Sunucudan atıldı. Sebep:", JSON.stringify(reason));
     });
 
     bot.on('end', () => {
@@ -62,7 +62,7 @@ function botuBaslat() {
     });
 
     bot.on('error', (err) => {
-        // Hatalarda çökmesini engelle
+        console.log("❌ Bağlantı hatası:", err.message);
     });
 }
 
