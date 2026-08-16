@@ -6,25 +6,122 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 let bot = null;
+let otoBaglan = false; // Otomatik yeniden bağlanma anahtarı
+let baglantiZamanlayici = null;
+
 let botDurumu = {
     durum: "Çevrimdışı",
     renk: "red",
-    ip: "ip adress",
-    port: "port",
-    kullaniciAdi: "bot name",
+    ip: "IP adress",
+    port: "-",
+    kullaniciAdi: "Bot Name",
     loglar: []
 };
 
-// Log ekleme fonksiyonu
 function logEkle(mesaj) {
     const zaman = new Date().toLocaleTimeString();
     const yeniLog = `[${zaman}] ${mesaj}`;
     botDurumu.loglar.unshift(yeniLog);
-    if (botDurumu.loglar.length > 25) botDurumu.loglar.pop();
+    if (botDurumu.loglar.length > 30) botDurumu.loglar.pop();
     console.log(yeniLog);
 }
 
-// 🌐 WEB ARAYÜZÜ (HTML + CSS + CANLI CANLI OTOMATİK YENİLEME)
+function botuOlustur() {
+    if (bot) return;
+
+    botDurumu.durum = "Bağlanıyor...";
+    botDurumu.renk = "#eab308";
+    logEkle(`🔌 ${botDurumu.ip}:${botDurumu.port} adresine ${botDurumu.kullaniciAdi} ismiyle bağlanılıyor...`);
+
+    try {
+        bot = mineflayer.createBot({
+            host: botDurumu.ip,
+            port: botDurumu.port,
+            username: botDurumu.kullaniciAdi,
+            version: "1.21.11",
+            checkTimeoutInterval: 90000
+        });
+
+        bot.on('spawn', () => {
+            botDurumu.durum = "🟢 Oyunda (Nöbet Aktif)";
+            botDurumu.renk = "#22c55e";
+            logEkle("✅ Bot BAŞARIYLA sunucuya girdi!");
+
+            // Her 30 saniyede bir zıplama ve rastgele bakış
+            if (!global.jumpInterval) {
+                global.jumpInterval = setInterval(() => {
+                    if (bot && bot.entity) {
+                        bot.setControlState('jump', true);
+                        setTimeout(() => bot.setControlState('jump', false), 400);
+                        const yaw = Math.random() * Math.PI * 2;
+                        const pitch = (Math.random() - 0.5) * Math.PI / 2;
+                        bot.look(yaw, pitch, false);
+                    }
+                }, 30000);
+            }
+
+            // Her 2 dakikada bir sohbet hareketi (AFK düşmesini engeller)
+            if (!global.chatInterval) {
+                global.chatInterval = setInterval(() => {
+                    if (bot && bot.player) {
+                        bot.chat("/help");
+                    }
+                }, 120000);
+            }
+        });
+
+        bot.on('kicked', (reason) => {
+            logEkle(`⚠️ Sunucudan atıldı: ${JSON.stringify(reason)}`);
+            botuTemizle("🔴 Atıldı (Tekrar Deneniyor...)", "#ef4444");
+            otomatikYenidenBaglan();
+        });
+
+        bot.on('end', () => {
+            logEkle("⚠️ Bağlantı koptu.");
+            botuTemizle("🔴 Kopma Oldu (Tekrar Deneniyor...)", "#ef4444");
+            otomatikYenidenBaglan();
+        });
+
+        bot.on('error', (err) => {
+            logEkle(`❌ Bağlantı hatası: ${err.message}`);
+            botuTemizle("❌ Hata (Tekrar Deneniyor...)", "#ef4444");
+            otomatikYenidenBaglan();
+        });
+
+    } catch (err) {
+        logEkle(`❌ Hata: ${err.message}`);
+        botuTemizle("❌ Hata Oluştu", "#ef4444");
+        otomatikYenidenBaglan();
+    }
+}
+
+function otomatikYenidenBaglan() {
+    if (!otoBaglan) return;
+    if (baglantiZamanlayici) clearTimeout(baglantiZamanlayici);
+
+    logEkle("🔄 15 saniye sonra otomatik tekrar bağlanılacak...");
+    baglantiZamanlayici = setTimeout(() => {
+        if (otoBaglan && !bot) {
+            botuOlustur();
+        }
+    }, 15000);
+}
+
+function botuTemizle(durumMetni, renk) {
+    if (bot) {
+        bot.removeAllListeners();
+        bot = null;
+    }
+    if (global.jumpInterval) clearInterval(global.jumpInterval);
+    if (global.chatInterval) clearInterval(global.chatInterval);
+    global.jumpInterval = null;
+    global.chatInterval = null;
+
+    botDurumu.durum = durumMetni;
+    botDurumu.renk = renk;
+}
+
+// WEB ARAYÜZÜ
 app.get('/', (req, res) => {
     res.send(`
     <!DOCTYPE html>
@@ -32,7 +129,7 @@ app.get('/', (req, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>GoodBridgeSMP Bot Paneli</title>
+        <title>Bot Creater</title>
         <style>
             * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
             body { background-color: #0f172a; color: #f8fafc; margin: 0; padding: 20px; display: flex; justify-content: center; }
@@ -50,13 +147,13 @@ app.get('/', (req, res) => {
             .btn-start:hover { background: #16a34a; }
             .btn-stop { background: #ef4444; color: #fff; }
             .btn-stop:hover { background: #dc2626; }
-            .logs-box { background: #090d16; border: 1px solid #334155; border-radius: 6px; height: 180px; overflow-y: auto; padding: 10px; font-family: monospace; font-size: 13px; margin-top: 20px; color: #cbd5e1; }
+            .logs-box { background: #090d16; border: 1px solid #334155; border-radius: 6px; height: 200px; overflow-y: auto; padding: 10px; font-family: monospace; font-size: 13px; margin-top: 20px; color: #cbd5e1; }
             .log-line { margin-bottom: 4px; }
         </style>
     </head>
     <body>
         <div class="container">
-            <h1>⚡ GoodBridgeSMP Bot Kontrol Paneli</h1>
+            <h1>Bot Creater</h1>
             
             <div class="status-card" id="statusCard">
                 <span>Durum: <strong id="statusText">Çevrimdışı</strong></span>
@@ -78,7 +175,7 @@ app.get('/', (req, res) => {
                 </div>
                 
                 <div class="btn-group">
-                    <button type="button" class="btn-start" onclick="botuBaslat()">🚀 Botu Sunucuya Sok</button>
+                    <button type="button" class="btn-start" onclick="botuBaslat()">🚀 Botu Sok (Oto-Yeniden Bağlan Açık)</button>
                     <button type="button" class="btn-stop" onclick="botuDurdur()">🛑 Botu Geri Çek</button>
                 </div>
             </form>
@@ -90,7 +187,6 @@ app.get('/', (req, res) => {
         </div>
 
         <script>
-            // Sitenin donmaması ve canlı kalması için her 3 saniyede bir verileri çeker
             async function verileriGuncelle() {
                 try {
                     const res = await fetch('/api/status');
@@ -134,12 +230,10 @@ app.get('/', (req, res) => {
     `);
 });
 
-// 🔄 CANLI SİTE/DURUM APİ'Sİ
 app.get('/api/status', (req, res) => {
     res.json(botDurumu);
 });
 
-// 🚀 BOTU BAŞLATMA EMRİ
 app.post('/api/start', (req, res) => {
     const { ip, port, username } = req.body;
 
@@ -148,101 +242,31 @@ app.post('/api/start', (req, res) => {
         return res.json({ success: false });
     }
 
+    otoBaglan = true;
     botDurumu.ip = ip;
     botDurumu.port = parseInt(port);
     botDurumu.kullaniciAdi = username;
-    botDurumu.durum = "Bağlanıyor...";
-    botDurumu.renk = "#eab308";
 
-    logEkle(`🔌 ${ip}:${port} adresine ${username} ismiyle bağlanılıyor...`);
-
-    try {
-        bot = mineflayer.createBot({
-            host: botDurumu.ip,
-            port: botDurumu.port,
-            username: botDurumu.kullaniciAdi,
-            version: "1.21.11",
-            checkTimeoutInterval: 90000
-        });
-
-        bot.on('spawn', () => {
-            botDurumu.durum = "🟢 Oyunda (Nöbet Aktif)";
-            botDurumu.renk = "#22c55e";
-            logEkle("✅ Bot BAŞARIYLA sunucuya girdi!");
-
-            // 45 saniyede bir zıplama ve etrafa bakış
-            if (!global.jumpInterval) {
-                global.jumpInterval = setInterval(() => {
-                    if (bot && bot.entity) {
-                        bot.setControlState('jump', true);
-                        setTimeout(() => bot.setControlState('jump', false), 500);
-                        const yaw = Math.random() * Math.PI * 2;
-                        bot.look(yaw, 0, false);
-                    }
-                }, 45000);
-            }
-
-            // 3 dakikada bir AFK engelleme komutu
-            if (!global.helpInterval) {
-                global.helpInterval = setInterval(() => {
-                    if (bot && bot.player) {
-                        bot.chat("/help");
-                    }
-                }, 180000);
-            }
-        });
-
-        bot.on('kicked', (reason) => {
-            logEkle(`⚠️ Sunucudan atıldı: ${JSON.stringify(reason)}`);
-            botTemizle("🔴 Sunucudan Atıldı", "#ef4444");
-        });
-
-        bot.on('end', () => {
-            logEkle("⚠️ Bağlantı koptu.");
-            botTemizle("🔴 Çevrimdışı", "#ef4444");
-        });
-
-        bot.on('error', (err) => {
-            logEkle(`❌ Bağlantı hatası: ${err.message}`);
-            botTemizle("❌ Hata Oluştu", "#ef4444");
-        });
-
-        res.json({ success: true });
-    } catch (err) {
-        logEkle(`❌ Hata: ${err.message}`);
-        botTemizle("❌ Hata Oluştu", "#ef4444");
-        res.json({ success: false });
-    }
+    botuOlustur();
+    res.json({ success: true });
 });
 
-// 🛑 BOTU GERİ ÇEKME / DURDURMA EMRİ
 app.post('/api/stop', (req, res) => {
+    otoBaglan = false;
+    if (baglantiZamanlayici) clearTimeout(baglantiZamanlayici);
+
     if (bot) {
         logEkle("🛑 Kullanıcı emriyle bot oyundan çekiliyor...");
         bot.quit();
-        botTemizle("🔴 Çevrimdışı (Durduruldu)", "#ef4444");
+        botuTemizle("🔴 Çevrimdışı (Durduruldu)", "#ef4444");
         res.json({ success: true });
     } else {
         logEkle("⚠️ Çalışan aktif bir bot bulunamadı.");
+        botuTemizle("🔴 Çevrimdışı", "#ef4444");
         res.json({ success: false });
     }
 });
 
-function botTemizle(durumMetni, renk) {
-    if (bot) {
-        bot.removeAllListeners();
-        bot = null;
-    }
-    if (global.jumpInterval) clearInterval(global.jumpInterval);
-    if (global.helpInterval) clearInterval(global.helpInterval);
-    global.jumpInterval = null;
-    global.helpInterval = null;
-
-    botDurumu.durum = durumMetni;
-    botDurumu.renk = renk;
-}
-
-// 🌐 Render Web Sunucusunu Başlat
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     logEkle(`🌐 Kontrol paneli yayında! Port: ${PORT}`);
