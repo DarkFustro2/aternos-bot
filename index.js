@@ -11,9 +11,9 @@ let baglantiZamanlayici = null;
 
 let botDurumu = {
     durum: "Çevrimdışı",
-    renk: "red",
-    ip: "IP adress",
-    port: "-",
+    renk: "#ef4444",
+    ip: "IP adresi",
+    port: "25565",
     kullaniciAdi: "Bot Name",
     loglar: []
 };
@@ -34,11 +34,16 @@ function botuOlustur() {
     logEkle(`🔌 ${botDurumu.ip}:${botDurumu.port} adresine ${botDurumu.kullaniciAdi} ismiyle bağlanılıyor...`);
 
     try {
+        const portNumber = parseInt(botDurumu.port) || 25565;
+
         bot = mineflayer.createBot({
             host: botDurumu.ip,
-            port: botDurumu.port,
+            port: portNumber,
             username: botDurumu.kullaniciAdi,
             version: "1.21.11",
+            fakeHost: botDurumu.ip,      // Aternos el sıkışmasını taklit eder
+            skipValidation: true,        // Hızlı bağlantı kurmayı sağlar
+            hideErrors: true,            // Gereksiz bağlantı gürültülerini engeller
             checkTimeoutInterval: 90000
         });
 
@@ -71,7 +76,7 @@ function botuOlustur() {
         });
 
         bot.on('kicked', (reason) => {
-            logEkle(`⚠️ Sunucudan atıldı: ${JSON.stringify(reason)}`);
+            logEkle(`⚠️ Sunucudan atıldı: ${typeof reason === 'object' ? JSON.stringify(reason) : reason}`);
             botuTemizle("🔴 Atıldı (Tekrar Deneniyor...)", "#ef4444");
             otomatikYenidenBaglan();
         });
@@ -109,7 +114,9 @@ function otomatikYenidenBaglan() {
 
 function botuTemizle(durumMetni, renk) {
     if (bot) {
-        bot.removeAllListeners();
+        try {
+            bot.removeAllListeners();
+        } catch (e) {}
         bot = null;
     }
     if (global.jumpInterval) clearInterval(global.jumpInterval);
@@ -129,7 +136,7 @@ app.get('/', (req, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Bot Creater</title>
+        <title>Bot Creator</title>
         <style>
             * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
             body { background-color: #0f172a; color: #f8fafc; margin: 0; padding: 20px; display: flex; justify-content: center; }
@@ -153,7 +160,7 @@ app.get('/', (req, res) => {
     </head>
     <body>
         <div class="container">
-            <h1>Bot Creater</h1>
+            <h1>⚡ Bot Creator</h1>
             
             <div class="status-card" id="statusCard">
                 <span>Durum: <strong id="statusText">Çevrimdışı</strong></span>
@@ -167,7 +174,7 @@ app.get('/', (req, res) => {
                 </div>
                 <div class="form-group">
                     <label>Port</label>
-                    <input type="number" id="port" value="${botDurumu.port}" required>
+                    <input type="text" id="port" value="${botDurumu.port}" required>
                 </div>
                 <div class="form-group">
                     <label>Bot Adı (Username)</label>
@@ -244,7 +251,7 @@ app.post('/api/start', (req, res) => {
 
     otoBaglan = true;
     botDurumu.ip = ip;
-    botDurumu.port = parseInt(port);
+    botDurumu.port = port;
     botDurumu.kullaniciAdi = username;
 
     botuOlustur();
@@ -257,7 +264,9 @@ app.post('/api/stop', (req, res) => {
 
     if (bot) {
         logEkle("🛑 Kullanıcı emriyle bot oyundan çekiliyor...");
-        bot.quit();
+        try {
+            bot.quit();
+        } catch(e) {}
         botuTemizle("🔴 Çevrimdışı (Durduruldu)", "#ef4444");
         res.json({ success: true });
     } else {
