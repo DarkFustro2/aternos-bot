@@ -1,7 +1,6 @@
 {
-  "name": "aternos-bot-panel",
+  "name": "aternos-afk-bot",
   "version": "1.0.0",
-  "description": "Minecraft Aternos Bot Kontrol Paneli",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
