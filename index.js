@@ -40,7 +40,7 @@ app.get('/', (req, res) => {
         h2 { color: #55FF55; }
         .card { background: #282828; padding: 15px; border-radius: 8px; margin-bottom: 15px; }
         input, button { padding: 10px; border-radius: 4px; border: none; font-size: 14px; }
-        input[type="text"] { width: 60%; background: #383838; color: #fff; }
+        input[type="text"] { width: 65%; background: #383838; color: #fff; }
         button { background: #55FF55; color: #000; font-weight: bold; cursor: pointer; }
         button:hover { background: #33CC33; }
         .danger { background: #FF5555; color: #fff; }
@@ -49,17 +49,19 @@ app.get('/', (req, res) => {
         .status { font-weight: bold; padding: 5px 10px; border-radius: 4px; display: inline-block; }
         .status-off { background: #555; color: #fff; }
         .status-on { background: #55FF55; color: #000; }
+        p.hint { color: #aaa; font-size: 12px; margin-top: 5px; }
       </style>
     </head>
     <body>
       <h2>GoodBridgeSMP Bot & Live Chat Paneli</h2>
       
       <div class="card">
-        <h3>YouTube Canlı Yayın Entegrasyonu</h3>
+        <h3>YouTube Chat Entegrasyonu</h3>
         <p>Durum: <span id="ytStatus" class="status status-off">KAPALI</span></p>
-        <input type="text" id="liveInput" placeholder="YouTube Canlı Yayın Linki veya Video ID yaz...">
-        <button onclick="startLive()">Yayın Sohbetini AÇ</button>
-        <button class="danger" onclick="stopLive()">Yayın Sohbetini KAPAT</button>
+        <input type="text" id="liveInput" placeholder="Sohbet Linki veya Video ID (ör: https://www.youtube.com/live_chat?v=VIDEO_ID)...">
+        <button onclick="startLive()">Chate Bağlan</button>
+        <button class="danger" onclick="stopLive()">Kapat</button>
+        <p class="hint">İster yayın linkini, ister "Ayrı Pencerede Aç" (Popout Chat) linkini yapıştırabilirsin.</p>
       </div>
 
       <div class="card">
@@ -87,7 +89,7 @@ app.get('/', (req, res) => {
 
         socket.on('yt_status', (active) => {
           if (active) {
-            ytStatus.textContent = "AÇIK (Canlı Yayın Dinleniyor)";
+            ytStatus.textContent = "AÇIK (Sohbet Dinleniyor)";
             ytStatus.className = "status status-on";
           } else {
             ytStatus.textContent = "KAPALI";
@@ -124,21 +126,30 @@ function logToWeb(msg) {
   io.emit('log', msg);
 }
 
+// ID Ayıklama Fonksiyonu (Popout Chat, Normal Link veya ID)
+function extractVideoId(inputStr) {
+  let str = inputStr.trim();
+  if (str.includes('v=')) {
+    return str.split('v=')[1].split('&')[0];
+  } else if (str.includes('youtu.be/')) {
+    return str.split('youtu.be/')[1].split('?')[0];
+  } else if (str.includes('live/')) {
+    return str.split('live/')[1].split('?')[0];
+  }
+  return str; // Doğrudan ID girildiyse
+}
+
 // YouTube Chat Başlatma
 function setupYouTubeChat(liveUrlOrId) {
-  let channelOrVideoId = liveUrlOrId;
-  if (liveUrlOrId.includes('v=')) {
-    channelOrVideoId = liveUrlOrId.split('v=')[1].split('&')[0];
-  } else if (liveUrlOrId.includes('youtu.be/')) {
-    channelOrVideoId = liveUrlOrId.split('youtu.be/')[1].split('?')[0];
-  } else if (liveUrlOrId.includes('live/')) {
-    channelOrVideoId = liveUrlOrId.split('live/')[1].split('?')[0];
-  }
+  const videoId = extractVideoId(liveUrlOrId);
 
   stopYouTubeChat();
 
   try {
-    ytLiveChat = new LiveChat({ liveId: channelOrVideoId });
+    logToWeb(`[YouTube] Sohbet ID parsed: ${videoId}`);
+
+    // interval: 3500ms ile istekleri yavaşlatıp engel yemeyi önlüyoruz
+    ytLiveChat = new LiveChat({ liveId: videoId }, { interval: 3500 });
 
     ytLiveChat.on('chat', (chatItem) => {
       const author = chatItem.author.name;
@@ -155,10 +166,10 @@ function setupYouTubeChat(liveUrlOrId) {
 
     ytLiveChat.start().then((ok) => {
       if (ok) {
-        logToWeb('[YouTube Chat] Canlı yayın chati dinlenmeye başlandı!');
+        logToWeb('[YouTube Chat] Canlı yayın chati başarıyla bağlandı!');
         io.emit('yt_status', true);
       } else {
-        logToWeb('[YouTube Chat] Canlı yayına bağlanılamadı.');
+        logToWeb('[YouTube Chat] Chate bağlanılamadı. Linki veya ID-yi kontrol et.');
         io.emit('yt_status', false);
       }
     });
@@ -234,7 +245,7 @@ function createBot() {
     afkInterval = setInterval(() => {
       if (!bot || !bot.entity) return;
 
-      // Anti-AFK Hareket (Zıplama & Kafayı Döndürme)
+      // Anti-AFK Hareket
       bot.setControlState('jump', true);
       setTimeout(() => { if (bot) bot.setControlState('jump', false); }, 500);
 
@@ -252,7 +263,6 @@ function createBot() {
     }, 30 * 1000);
   });
 
-  // Oyun İçi Chat Loglama (Arayüzde görmek için)
   bot.on('chat', (username, message) => {
     if (username === bot.username) return;
     logToWeb(`[MC Chat] <${username}>: ${message}`);
