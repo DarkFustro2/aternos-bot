@@ -9,6 +9,6 @@
     "express": "^4.19.2",
     "mineflayer": "^4.20.1",
     "socket.io": "^4.7.5",
-    "youtube-chat": "^1.2.0"
+    "youtube-chat": "latest"
   }
 }
