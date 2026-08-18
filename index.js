@@ -1,34 +1,46 @@
 const mineflayer = require('mineflayer');
 const express = require('express');
+const https = require('https');
 const http = require('http');
 
 // --- 1. RENDER İÇİN WEB SUNUCUSU VE SELF-PING ---
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// BURAYA RENDER SİTE ADRESİNİ YAZ (örnek: https://aternos-bot.onrender.com)
+// Eğer boş bırakırsan varsayılan olarak localhost kullanır.
+const RENDER_EXTERNAL_URL = process.env.RENDER_EXTERNAL_URL || '';
+
 app.get('/', (req, res) => {
-  res.send('Bot servisi aktif ve uyanik!');
+  const memoryUsage = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
+  res.send(`Bot servisi aktif! Anlik RAM Kullanimi: ${memoryUsage} MB`);
 });
 
 app.listen(PORT, () => {
   console.log(`[Web] Sunucu ${PORT} portunda baslatildi.`);
 });
 
-// Render'in web servisini uyutmamasi icın 2 dakikada bir istek atan sistem
+// Render'ı uyanik tutmak icın 2 dakikada bir istek atan sistem
 setInterval(() => {
-  http.get(`http://localhost:${PORT}`, (res) => {
-    console.log('[Self-Ping] Ping gönderildi, Render uyanik tutuluyor.');
+  const url = RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
+  const client = url.startsWith('https') ? https : http;
+
+  client.get(url, (res) => {
+    console.log(`[Self-Ping] Ping gonderildi (${url}), durum koda: ${res.statusCode}`);
   }).on('error', (err) => {
     console.log('[Self-Ping] Hata:', err.message);
   });
 }, 2 * 60 * 1000); // 2 dakika
 
-// --- 2. MINECRAFT BOT AYARLARI ---
+// --- 2. MINECRAFT BOT VE RAM OPTİMİZASYONU ---
 const botOptions = {
   host: 'goodbridgesmp.aternos.me',
   port: 30769,
   username: 'GoodBridgeSMP',
-  version: false // Sunucu sürümünü otomatik algilar
+  version: false,
+  // RAM Tasarrufu icın kritik ayarlar:
+  checkTimeoutInterval: 60 * 1000,
+  physicsEnabled: true
 };
 
 let isReconnecting = false;
@@ -36,14 +48,14 @@ let isReconnecting = false;
 function createBot() {
   console.log('[Bot] Sunucuya baglaniliyor...');
   isReconnecting = false;
-  
+
   const bot = mineflayer.createBot(botOptions);
   let afkInterval = null;
 
   bot.on('spawn', () => {
     console.log('[Bot] Sunucuya basariyla giris yapildi!');
 
-    // Anti-AFK Döngüsü (Her 30 saniyede bir hareket eder ve /help yazar)
+    // Anti-AFK Döngüsü (Her 30 saniyede bir)
     afkInterval = setInterval(() => {
       if (!bot || !bot.entity) return;
 
@@ -61,28 +73,33 @@ function createBot() {
       const pitch = (Math.random() - 0.5) * Math.PI;
       bot.look(yaw, pitch, true);
 
-      console.log('[Anti-AFK] Hareket edildi ve /help yazildi.');
-    }, 30 * 1000); // 30 saniye
+      // RAM Temizliği: Gereksiz entity (varlik) verilerini hafizadan sil
+      if (bot.entities) {
+        Object.keys(bot.entities).forEach((id) => {
+          if (bot.entities[id] && bot.entities[id] !== bot.entity) {
+            delete bot.entities[id];
+          }
+        });
+      }
+
+      const memMB = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
+      console.log(`[Anti-AFK] Hareket edildi. Mevcut RAM: ${memMB} MB`);
+    }, 30 * 1000);
   });
 
-  // Sunucudan atilma durumu
   bot.on('kicked', (reason) => {
     const reasonStr = JSON.stringify(reason);
     console.log('[Bot] Sunucudan atildi. Sebep:', reasonStr);
 
-    // Eger duplicate_login hatasi alindiysa oturumun dusmesi icin daha uzun bekle (45sn)
     if (reasonStr.includes('duplicate_login')) {
-      console.log('[Bot] Ayni isimle giris tespit edildi. Oturumun dusmesi icin 45 saniye bekleniyor...');
+      console.log('[Bot] Oturumun dusmesi icin 45 saniye bekleniyor...');
       reconnect(45000);
     }
   });
 
-  // Baglanti kesilmesi
   bot.on('end', (reason) => {
     console.log(`[Bot] Baglanti kesildi. Sebep: ${reason}`);
     if (afkInterval) clearInterval(afkInterval);
-    
-    // Eger kicked eventinde ozel reconnect tetiklenmediyse standart reconnect (30sn)
     reconnect(30000);
   });
 
@@ -96,12 +113,12 @@ function createBot() {
 
     if (afkInterval) clearInterval(afkInterval);
     console.log(`[Bot] ${delay / 1000} saniye sonra tekrar baglanilacak...`);
-    
+
     setTimeout(() => {
       createBot();
     }, delay);
   }
 }
 
-// Botu ilk kez baslat
+// Botu baslat
 createBot();
