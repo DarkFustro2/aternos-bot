@@ -3,20 +3,40 @@ const express = require('express');
 const http = require('http');
 const https = require('https');
 const { Server } = require('socket.io');
-const { LiveChat } = require('youtube-chat');
 
-// --- 1. EXPRESS & SOCKET.IO SUNUCUSU ---
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
+app.use(express.json());
+
 const PORT = process.env.PORT || 3000;
 const RENDER_URL = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
 
-let botInstance = null;
-let ytLiveChat = null;
+// --- ŞİFRELEME AYARI ---
+const KULLANICI_ADI = 'DarqFustro';
+const SIFRE = '1234five';
 
-// Spam Engelleme İçin Mesaj Kuyruğu (Her 1.2 saniyede 1 mesaj gönderir)
+// Basic Auth (Siteye Şifreli Giriş)
+app.use((req, res, next) => {
+  // Python scriptinin gönderdiği sohbet mesajlarını şifresiz kabul et
+  if (req.path === '/api/yt-chat') return next();
+
+  const auth = { login: KULLANICI_ADI, password: SIFRE };
+  const b64auth = (req.headers.authorization || '').split(' ')[1] || '';
+  const [login, password] = Buffer.from(b64auth, 'base64').toString().split(':');
+
+  if (login && password && login === auth.login && password === auth.password) {
+    return next();
+  }
+
+  res.set('WWW-Authenticate', 'Basic realm="401"');
+  res.status(401).send('Giris Reddedildi: Yanlis Kullanici Adi veya Sifre!');
+});
+
+let botInstance = null;
+
+// Spam Engelleme İçin Mesaj Kuyruğu
 const messageQueue = [];
 
 setInterval(() => {
@@ -25,6 +45,18 @@ setInterval(() => {
     botInstance.chat(msg);
   }
 }, 1200);
+
+// Python Scriptinden Gelen Chat Mesajlarını Al
+app.post('/api/yt-chat', (req, res) => {
+  const { author, message } = req.body;
+  if (author && message) {
+    const fullMsg = `[Live | ${author}]: ${message}`;
+    logToWeb(`[YouTube Chat] ${author}: ${message}`);
+    messageQueue.push(fullMsg);
+    return res.json({ status: 'ok' });
+  }
+  res.status(400).json({ error: 'Eksik veri' });
+});
 
 // HTML Kontrol Paneli
 app.get('/', (req, res) => {
@@ -43,26 +75,11 @@ app.get('/', (req, res) => {
         input[type="text"] { width: 65%; background: #383838; color: #fff; }
         button { background: #55FF55; color: #000; font-weight: bold; cursor: pointer; }
         button:hover { background: #33CC33; }
-        .danger { background: #FF5555; color: #fff; }
-        .danger:hover { background: #CC3333; }
         #console { background: #000; color: #00FF00; padding: 10px; height: 300px; overflow-y: scroll; font-family: monospace; border-radius: 5px; }
-        .status { font-weight: bold; padding: 5px 10px; border-radius: 4px; display: inline-block; }
-        .status-off { background: #555; color: #fff; }
-        .status-on { background: #55FF55; color: #000; }
-        p.hint { color: #aaa; font-size: 12px; margin-top: 5px; }
       </style>
     </head>
     <body>
-      <h2>GoodBridgeSMP Bot & Live Chat Paneli</h2>
-      
-      <div class="card">
-        <h3>YouTube Chat Entegrasyonu</h3>
-        <p>Durum: <span id="ytStatus" class="status status-off">KAPALI</span></p>
-        <input type="text" id="liveInput" placeholder="Sohbet Linki veya Video ID (ör: https://www.youtube.com/live_chat?v=VIDEO_ID)...">
-        <button onclick="startLive()">Chate Bağlan</button>
-        <button class="danger" onclick="stopLive()">Kapat</button>
-        <p class="hint">İster yayın linkini, ister "Ayrı Pencerede Aç" (Popout Chat) linkini yapıştırabilirsin.</p>
-      </div>
+      <h2>GoodBridgeSMP Bot Paneli (Özel)</h2>
 
       <div class="card">
         <h3>Oyuna Mesaj / Komut Gönder</h3>
@@ -78,7 +95,6 @@ app.get('/', (req, res) => {
       <script>
         const socket = io();
         const consoleDiv = document.getElementById('console');
-        const ytStatus = document.getElementById('ytStatus');
 
         socket.on('log', (data) => {
           const p = document.createElement('div');
@@ -87,33 +103,12 @@ app.get('/', (req, res) => {
           consoleDiv.scrollTop = consoleDiv.scrollHeight;
         });
 
-        socket.on('yt_status', (active) => {
-          if (active) {
-            ytStatus.textContent = "AÇIK (Sohbet Dinleniyor)";
-            ytStatus.className = "status status-on";
-          } else {
-            ytStatus.textContent = "KAPALI";
-            ytStatus.className = "status status-off";
-          }
-        });
-
         function sendChat() {
           const input = document.getElementById('chatInput');
           if (input.value) {
             socket.emit('send_chat', input.value);
             input.value = '';
           }
-        }
-
-        function startLive() {
-          const input = document.getElementById('liveInput');
-          if (input.value) {
-            socket.emit('start_yt_live', input.value);
-          }
-        }
-
-        function stopLive() {
-          socket.emit('stop_yt_live');
         }
       </script>
     </body>
@@ -126,87 +121,15 @@ function logToWeb(msg) {
   io.emit('log', msg);
 }
 
-// ID Ayıklama Fonksiyonu (Popout Chat, Normal Link veya ID)
-function extractVideoId(inputStr) {
-  let str = inputStr.trim();
-  if (str.includes('v=')) {
-    return str.split('v=')[1].split('&')[0];
-  } else if (str.includes('youtu.be/')) {
-    return str.split('youtu.be/')[1].split('?')[0];
-  } else if (str.includes('live/')) {
-    return str.split('live/')[1].split('?')[0];
-  }
-  return str; // Doğrudan ID girildiyse
-}
-
-// YouTube Chat Başlatma
-function setupYouTubeChat(liveUrlOrId) {
-  const videoId = extractVideoId(liveUrlOrId);
-
-  stopYouTubeChat();
-
-  try {
-    logToWeb(`[YouTube] Sohbet ID parsed: ${videoId}`);
-
-    // interval: 3500ms ile istekleri yavaşlatıp engel yemeyi önlüyoruz
-    ytLiveChat = new LiveChat({ liveId: videoId }, { interval: 3500 });
-
-    ytLiveChat.on('chat', (chatItem) => {
-      const author = chatItem.author.name;
-      const message = chatItem.message.map((m) => m.text).join('');
-      const fullMsg = `[Live | ${author}]: ${message}`;
-
-      logToWeb(`[YouTube Chat] ${author}: ${message}`);
-      messageQueue.push(fullMsg);
-    });
-
-    ytLiveChat.on('error', (err) => {
-      logToWeb('[YouTube Hata]: ' + err.message);
-    });
-
-    ytLiveChat.start().then((ok) => {
-      if (ok) {
-        logToWeb('[YouTube Chat] Canlı yayın chati başarıyla bağlandı!');
-        io.emit('yt_status', true);
-      } else {
-        logToWeb('[YouTube Chat] Chate bağlanılamadı. Linki veya ID-yi kontrol et.');
-        io.emit('yt_status', false);
-      }
-    });
-  } catch (err) {
-    logToWeb('[YouTube Kurulum Hatası]: ' + err.message);
-    io.emit('yt_status', false);
-  }
-}
-
-function stopYouTubeChat() {
-  if (ytLiveChat) {
-    ytLiveChat.stop();
-    ytLiveChat = null;
-    messageQueue.length = 0;
-    logToWeb('[YouTube] Chat dinlemesi durduruldu.');
-    io.emit('yt_status', false);
-  }
-}
-
 // Socket Bağlantıları
 io.on('connection', (socket) => {
   logToWeb('[Panel] Kontrol paneline bağlandı.');
-  socket.emit('yt_status', ytLiveChat !== null);
 
   socket.on('send_chat', (msg) => {
     if (botInstance) {
       botInstance.chat(msg);
       logToWeb(`[Web -> Oyun] Gönderildi: ${msg}`);
     }
-  });
-
-  socket.on('start_yt_live', (link) => {
-    setupYouTubeChat(link);
-  });
-
-  socket.on('stop_yt_live', () => {
-    stopYouTubeChat();
   });
 });
 
