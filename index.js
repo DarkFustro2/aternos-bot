@@ -234,12 +234,7 @@ function createBot() {
     afkInterval = setInterval(() => {
       if (!bot || !bot.entity) return;
 
-      // Yayın chati kapalıysa ve kuyruk boşsa /help gönder
-      if (!ytLiveChat && messageQueue.length === 0) {
-        bot.chat('/help');
-      }
-
-      // Anti-AFK Hareket
+      // Anti-AFK Hareket (Zıplama & Kafayı Döndürme)
       bot.setControlState('jump', true);
       setTimeout(() => { if (bot) bot.setControlState('jump', false); }, 500);
 
