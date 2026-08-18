@@ -39,10 +39,18 @@ let botInstance = null;
 // Spam Engelleme İçin Mesaj Kuyruğu
 const messageQueue = [];
 
+// YouTube Mesajlarını Minecraft Chatine /tellraw İle Bas (Turuncu Etiket)
 setInterval(() => {
   if (messageQueue.length > 0 && botInstance && botInstance.entity) {
-    const msg = messageQueue.shift();
-    botInstance.chat(msg);
+    const item = messageQueue.shift();
+
+    // /tellraw formatı: <GoodBridgeSMP> takısını tamamen siler ve ismi TURUNCU basar!
+    const tellrawObject = [
+      { text: `[@${item.author}]: `, color: "gold", bold: true }, // Minecraft'ta canlı turuncu/altın rengi
+      { text: item.message, color: "white" }
+    ];
+
+    botInstance.chat(`/tellraw @a ${JSON.stringify(tellrawObject)}`);
   }
 }, 1200);
 
@@ -50,9 +58,8 @@ setInterval(() => {
 app.post('/api/yt-chat', (req, res) => {
   const { author, message } = req.body;
   if (author && message) {
-    const fullMsg = `[Live | ${author}]: ${message}`;
     logToWeb(`[YouTube Chat] ${author}: ${message}`);
-    messageQueue.push(fullMsg);
+    messageQueue.push({ author, message });
     return res.json({ status: 'ok' });
   }
   res.status(400).json({ error: 'Eksik veri' });
